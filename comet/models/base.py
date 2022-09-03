@@ -346,6 +346,28 @@ class CometModel(ptl.LightningModule, metaclass=abc.ABCMeta):
         else:
             self.eval()
 
+    def predict_mello(
+        self,
+        samples: List[Dict[str, str]],
+        batch_size: int = 8,
+        device: int = 0,
+    ) -> Union[Tuple[List[float], float], Tuple[List[float], List[float], float]]:
+
+        self = self.to(device)
+        self.eval()
+        dataloader = DataLoader(
+            dataset=samples,
+            batch_size=batch_size,
+            collate_fn=self.prepare_for_inference,            # 这个collate_fn 转化成数字  TODO 直接改device
+        )
+        predictions = []
+        for i, batch in enumerate(dataloader):
+            for k in batch:
+                batch[k] = batch[k].to(device)
+            predictions.append(self(**batch)["score"].view(-1))
+        predictions = torch.cat(predictions, dim=-1).tolist()
+        return predictions
+
     def predict_step(
         self,
         batch: Dict[str, torch.Tensor],
@@ -421,6 +443,12 @@ class CometModel(ptl.LightningModule, metaclass=abc.ABCMeta):
                 num_workers=min(4, multiprocessing.cpu_count()),
             ),
         ]
+
+    def prepare_for_inference(self, sample):
+        """Ideally this should be a lamba function but for some reason python does not copy local lambda functions.
+        This functions replaces `collate_fn=lambda x: self.prepare_sample(x, inference=True)` from line 434.
+        """
+        return self.prepare_sample(sample, inference=True)
 
     def predict(
         self,
